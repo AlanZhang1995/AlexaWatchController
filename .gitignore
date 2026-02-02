@@ -1,0 +1,20 @@
+# Xcode
+.DS_Store
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/xcuserdata/
+Package.resolved
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# IDE
+*.xcworkspace
+!*.xcodeproj/project.xcworkspace/

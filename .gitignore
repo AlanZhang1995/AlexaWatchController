@@ -3,12 +3,10 @@
 *.xcuserstate
 xcuserdata/
 DerivedData/
-*.xcodeproj/
-*.xcworkspace/
 
 # Swift Package Manager
 .build/
-.swiftpm/
+.swiftpm/xcode/xcuserdata/
 Package.resolved
 
 # CocoaPods
@@ -16,3 +14,7 @@ Pods/
 
 # Carthage
 Carthage/Build/
+
+# IDE
+*.xcworkspace
+!*.xcodeproj/project.xcworkspace/

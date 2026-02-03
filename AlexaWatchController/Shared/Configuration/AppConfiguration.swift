@@ -39,6 +39,16 @@ public enum AppConfiguration {
     /// UserDefaults suite name for shared data
     public static let sharedUserDefaultsSuiteName = appGroupIdentifier
     
+    // MARK: - OAuth Credentials
+    // ⚠️ 在 Amazon Developer Console 创建 Security Profile 后填入
+    // https://developer.amazon.com/settings/console/securityprofile/overview.html
+    
+    /// OAuth Client ID - 从 Amazon Developer Console 获取
+    public static let oauthClientId = "YOUR_CLIENT_ID_HERE"
+    
+    /// OAuth Client Secret - 从 Amazon Developer Console 获取
+    public static let oauthClientSecret = "YOUR_CLIENT_SECRET_HERE"
+    
     // MARK: - API
     
     /// Alexa API base URL

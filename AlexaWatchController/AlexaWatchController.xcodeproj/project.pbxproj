@@ -43,6 +43,7 @@
 		A1000003018 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003018 /* AppConfiguration.swift */; };
 		A1000003019 /* SharedUserDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003019 /* SharedUserDefaults.swift */; };
 		A1000003020 /* ComplicationConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003020 /* ComplicationConfiguration.swift */; };
+		A1000003021 /* LWAAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003021 /* LWAAuthService.swift */; };
 		A1000004001 /* SmartPlug.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003001 /* SmartPlug.swift */; };
 		A1000004002 /* DeviceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003002 /* DeviceState.swift */; };
 		A1000004003 /* AuthToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003003 /* AuthToken.swift */; };
@@ -133,6 +134,7 @@
 		A2000003018 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		A2000003019 /* SharedUserDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedUserDefaults.swift; sourceTree = "<group>"; };
 		A2000003020 /* ComplicationConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComplicationConfiguration.swift; sourceTree = "<group>"; };
+		A2000003021 /* LWAAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LWAAuthService.swift; sourceTree = "<group>"; };
 		A2000005001 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
 		A2000005002 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
 		A2000005003 /* ClockKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ClockKit.framework; path = System/Library/Frameworks/ClockKit.framework; sourceTree = SDKROOT; };
@@ -318,6 +320,7 @@
 				A2000003012 /* ConnectivityService.swift */,
 				A2000003013 /* ConnectivityServiceProtocol.swift */,
 				A2000003014 /* KeychainService.swift */,
+				A2000003021 /* LWAAuthService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -496,6 +499,7 @@
 				A1000003012 /* ConnectivityService.swift in Sources */,
 				A1000003013 /* ConnectivityServiceProtocol.swift in Sources */,
 				A1000003014 /* KeychainService.swift in Sources */,
+				A1000003021 /* LWAAuthService.swift in Sources */,
 				A1000003015 /* AuthViewModel.swift in Sources */,
 				A1000003016 /* DeviceViewModel.swift in Sources */,
 				A1000003017 /* ErrorHandler.swift in Sources */,

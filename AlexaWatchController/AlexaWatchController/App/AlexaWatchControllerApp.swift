@@ -24,7 +24,8 @@ struct AlexaWatchControllerApp: App {
     
     init() {
         // Initialize services
-        let authService = AuthService()
+        // 使用 LWAAuthService 支持 Login with Amazon SSO
+        let authService = LWAAuthService()
         let connectivityService = ConnectivityService.shared
         
         // Initialize view model with dependency injection

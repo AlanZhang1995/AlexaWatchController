@@ -1,99 +1,110 @@
 //
-//  AuthService.swift
+//  LWAAuthService.swift
 //  AlexaWatchController
 //
-//  OAuth authentication service implementation.
-//  Validates: Requirements 1.2, 1.3, 1.5
+//  Login with Amazon 认证服务
+//  使用 ASWebAuthenticationSession 实现 OAuth 流程
 //
 
 import Foundation
+import AuthenticationServices
+
 #if canImport(UIKit)
 import UIKit
 #endif
 
-/// Implementation of the authentication service for OAuth operations.
-/// Handles OAuth flow initiation, callback processing, token refresh,
-/// and secure token storage using Keychain.
-public final class AuthService: AuthServiceProtocol {
+/// Login with Amazon 认证服务
+/// 使用系统级 ASWebAuthenticationSession 实现单点登录
+public final class LWAAuthService: NSObject, AuthServiceProtocol {
     
     // MARK: - Properties
     
-    /// Keychain service for secure token storage
     private let keychainService: KeychainService
-    
-    /// URL session for network requests
     private let urlSession: URLSession
-    
-    /// OAuth client ID (should be configured in your Amazon Developer Console)
-    private let clientId: String
-    
-    /// OAuth client secret (should be configured in your Amazon Developer Console)
-    private let clientSecret: String
-    
-    /// Current OAuth state for CSRF protection
+    private var webAuthSession: ASWebAuthenticationSession?
     private var currentOAuthState: String?
     
     // MARK: - Initialization
     
-    /// Creates a new AuthService instance.
-    /// - Parameters:
-    ///   - keychainService: The Keychain service for secure storage
-    ///   - urlSession: The URL session for network requests
-    ///   - clientId: The OAuth client ID
-    ///   - clientSecret: The OAuth client secret
     public init(
         keychainService: KeychainService = KeychainService(),
-        urlSession: URLSession = .shared,
-        clientId: String = AppConfiguration.oauthClientId,
-        clientSecret: String = AppConfiguration.oauthClientSecret
+        urlSession: URLSession = .shared
     ) {
         self.keychainService = keychainService
         self.urlSession = urlSession
-        self.clientId = clientId
-        self.clientSecret = clientSecret
+        super.init()
     }
     
     // MARK: - AuthServiceProtocol
     
-    /// Checks if the user is currently authenticated with a valid token.
     public var isAuthenticated: Bool {
-        guard let token = getStoredToken() else {
-            return false
-        }
+        guard let token = getStoredToken() else { return false }
         return !token.isExpired
     }
     
-    /// Initiates the OAuth authentication flow.
-    /// Opens the Amazon login page for user authentication.
-    /// - Validates: Requirement 1.2 - Companion_App SHALL redirect user to Amazon's login page
+    /// 使用 ASWebAuthenticationSession 发起 OAuth 登录
+    /// 支持 SSO - 如果用户已在 Safari/系统中登录 Amazon，可自动填充
     public func initiateOAuth() async throws {
         guard let authURL = getAuthorizationURL() else {
             throw AppError.authenticationRequired
         }
         
-        // Store the state for later verification
+        // 保存 state 用于验证
         if let state = currentOAuthState {
             keychainService.save(state, forKey: KeychainKeys.oauthState)
         }
         
-        // Open the authorization URL
         #if canImport(UIKit) && !os(watchOS)
-        await MainActor.run {
-            UIApplication.shared.open(authURL)
+        // 使用 ASWebAuthenticationSession
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let session = ASWebAuthenticationSession(
+                url: authURL,
+                callbackURLScheme: AppConfiguration.oauthRedirectScheme
+            ) { [weak self] callbackURL, error in
+                if let error = error {
+                    if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        continuation.resume(throwing: AppError.authenticationRequired)
+                    } else {
+                        continuation.resume(throwing: AppError.apiError(error.localizedDescription))
+                    }
+                    return
+                }
+                
+                guard let callbackURL = callbackURL else {
+                    continuation.resume(throwing: AppError.authenticationRequired)
+                    return
+                }
+                
+                // 处理回调
+                Task {
+                    do {
+                        _ = try await self?.handleCallback(url: callbackURL)
+                        continuation.resume()
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+            
+            session.prefersEphemeralWebBrowserSession = false // 允许 SSO
+            session.presentationContextProvider = self
+            
+            self.webAuthSession = session
+            
+            DispatchQueue.main.async {
+                session.start()
+            }
         }
         #endif
     }
     
-    /// Returns the OAuth authorization URL for the login page.
-    /// - Returns: The URL to open for OAuth authentication
     public func getAuthorizationURL() -> URL? {
-        // Generate a random state for CSRF protection
         let state = UUID().uuidString
         currentOAuthState = state
         
         var components = URLComponents(string: AppConfiguration.oauthAuthorizationURL)
         components?.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
+            URLQueryItem(name: "client_id", value: AppConfiguration.oauthClientId),
             URLQueryItem(name: "scope", value: "alexa::all"),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: AppConfiguration.oauthRedirectURI),
@@ -103,29 +114,21 @@ public final class AuthService: AuthServiceProtocol {
         return components?.url
     }
     
-    /// Handles the OAuth callback URL after user authentication.
-    /// Exchanges the authorization code for access and refresh tokens.
-    /// - Parameter url: The callback URL containing the authorization code
-    /// - Returns: The authenticated `AuthToken`
-    /// - Validates: Requirement 1.3 - Companion_App SHALL securely store the OAuth_Token
     public func handleCallback(url: URL) async throws -> AuthToken {
-        // Parse the callback URL
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let queryItems = components.queryItems else {
             throw AppError.authenticationRequired
         }
         
-        // Extract authorization code and state
         let code = queryItems.first(where: { $0.name == "code" })?.value
         let state = queryItems.first(where: { $0.name == "state" })?.value
         let error = queryItems.first(where: { $0.name == "error" })?.value
         
-        // Check for errors
         if let error = error {
             throw AppError.apiError("OAuth error: \(error)")
         }
         
-        // Verify state matches (CSRF protection)
+        // 验证 state (CSRF 保护)
         let storedState = keychainService.retrieve(String.self, forKey: KeychainKeys.oauthState)
         if let state = state, state != storedState && state != currentOAuthState {
             throw AppError.authenticationRequired
@@ -135,29 +138,19 @@ public final class AuthService: AuthServiceProtocol {
             throw AppError.authenticationRequired
         }
         
-        // Exchange code for tokens
         let token = try await exchangeCodeForToken(code: authCode)
-        
-        // Store the token securely
-        // Validates: Requirement 1.3 - Companion_App SHALL securely store the OAuth_Token
         keychainService.save(token, forKey: KeychainKeys.authToken)
-        
-        // Clear the OAuth state
         keychainService.delete(forKey: KeychainKeys.oauthState)
         currentOAuthState = nil
         
         return token
     }
     
-    /// Refreshes the current access token using the refresh token.
-    /// - Returns: A new `AuthToken` with updated access token
-    /// - Validates: Requirement 1.5 - Watch_App SHALL notify user to re-authenticate if token expires
     public func refreshToken() async throws -> AuthToken {
         guard let currentToken = getStoredToken() else {
             throw AppError.authenticationRequired
         }
         
-        // Build the token refresh request
         guard let tokenURL = URL(string: AppConfiguration.oauthTokenURL) else {
             throw AppError.apiError("Invalid token URL")
         }
@@ -169,8 +162,8 @@ public final class AuthService: AuthServiceProtocol {
         let bodyParams = [
             "grant_type": "refresh_token",
             "refresh_token": currentToken.refreshToken,
-            "client_id": clientId,
-            "client_secret": clientSecret
+            "client_id": AppConfiguration.oauthClientId,
+            "client_secret": AppConfiguration.oauthClientSecret
         ]
         
         request.httpBody = bodyParams
@@ -178,53 +171,33 @@ public final class AuthService: AuthServiceProtocol {
             .joined(separator: "&")
             .data(using: .utf8)
         
-        do {
-            let (data, response) = try await urlSession.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw AppError.networkUnavailable
-            }
-            
-            guard httpResponse.statusCode == 200 else {
-                // Token refresh failed - user needs to re-authenticate
-                // Validates: Requirement 1.5
-                clearToken()
-                throw AppError.tokenExpired
-            }
-            
-            let tokenResponse = try JSONDecoder().decode(OAuthTokenResponse.self, from: data)
-            let newToken = tokenResponse.toAuthToken()
-            
-            // Store the new token securely
-            keychainService.save(newToken, forKey: KeychainKeys.authToken)
-            
-            return newToken
-        } catch let error as AppError {
-            throw error
-        } catch {
-            throw AppError.networkUnavailable
+        let (data, response) = try await urlSession.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            clearToken()
+            throw AppError.tokenExpired
         }
+        
+        let tokenResponse = try JSONDecoder().decode(OAuthTokenResponse.self, from: data)
+        let newToken = tokenResponse.toAuthToken()
+        keychainService.save(newToken, forKey: KeychainKeys.authToken)
+        
+        return newToken
     }
     
-    /// Retrieves the currently stored authentication token.
-    /// - Returns: The stored `AuthToken` if available, nil otherwise
     public func getStoredToken() -> AuthToken? {
         return keychainService.retrieve(AuthToken.self, forKey: KeychainKeys.authToken)
     }
     
-    /// Clears the stored authentication token.
-    /// Used for logout or when re-authentication is required.
     public func clearToken() {
         keychainService.delete(forKey: KeychainKeys.authToken)
         keychainService.delete(forKey: KeychainKeys.oauthState)
         currentOAuthState = nil
     }
     
-    // MARK: - Private Methods
+    // MARK: - Private
     
-    /// Exchanges an authorization code for access and refresh tokens.
-    /// - Parameter code: The authorization code from the OAuth callback
-    /// - Returns: The authenticated `AuthToken`
     private func exchangeCodeForToken(code: String) async throws -> AuthToken {
         guard let tokenURL = URL(string: AppConfiguration.oauthTokenURL) else {
             throw AppError.apiError("Invalid token URL")
@@ -238,8 +211,8 @@ public final class AuthService: AuthServiceProtocol {
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": AppConfiguration.oauthRedirectURI,
-            "client_id": clientId,
-            "client_secret": clientSecret
+            "client_id": AppConfiguration.oauthClientId,
+            "client_secret": AppConfiguration.oauthClientSecret
         ]
         
         request.httpBody = bodyParams
@@ -247,31 +220,35 @@ public final class AuthService: AuthServiceProtocol {
             .joined(separator: "&")
             .data(using: .utf8)
         
-        do {
-            let (data, response) = try await urlSession.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw AppError.networkUnavailable
-            }
-            
-            guard httpResponse.statusCode == 200 else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                throw AppError.apiError("Token exchange failed: \(errorMessage)")
-            }
-            
-            let tokenResponse = try JSONDecoder().decode(OAuthTokenResponse.self, from: data)
-            return tokenResponse.toAuthToken()
-        } catch let error as AppError {
-            throw error
-        } catch {
-            throw AppError.networkUnavailable
+        let (data, response) = try await urlSession.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AppError.apiError("Token exchange failed: \(errorMessage)")
         }
+        
+        let tokenResponse = try JSONDecoder().decode(OAuthTokenResponse.self, from: data)
+        return tokenResponse.toAuthToken()
     }
 }
 
+// MARK: - ASWebAuthenticationPresentationContextProviding
+
+#if canImport(UIKit) && !os(watchOS)
+extension LWAAuthService: ASWebAuthenticationPresentationContextProviding {
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first else {
+            return ASPresentationAnchor()
+        }
+        return window
+    }
+}
+#endif
+
 // MARK: - OAuth Token Response
 
-/// Response structure from the OAuth token endpoint
 private struct OAuthTokenResponse: Codable {
     let accessToken: String
     let refreshToken: String
@@ -285,7 +262,6 @@ private struct OAuthTokenResponse: Codable {
         case tokenType = "token_type"
     }
     
-    /// Converts the response to an AuthToken model
     func toAuthToken() -> AuthToken {
         let expiresAt = Date().addingTimeInterval(TimeInterval(expiresIn))
         return AuthToken(

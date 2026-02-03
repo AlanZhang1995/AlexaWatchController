@@ -1,5 +1,7 @@
 # Xcode
 .DS_Store
+*.xcuserstate
+xcuserdata/
 DerivedData/
 
 # Swift Package Manager
@@ -14,3 +16,5 @@ Pods/
 Carthage/Build/
 
 # IDE
+*.xcworkspace
+!*.xcodeproj/project.xcworkspace/
